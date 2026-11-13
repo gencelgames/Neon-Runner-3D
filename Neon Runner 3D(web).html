@@ -1,0 +1,84 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Neon Runner 3D</title>
+<style>
+:root{color-scheme:dark;box-sizing:border-box}
+html,body{height:100%;margin:0;background:#0b0a1a;color:#fff;font:16px system-ui,sans-serif;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none}
+canvas{display:block;position:fixed;inset:0;width:100%;height:100%}
+#hud{position:fixed;left:0;right:0;top:0;display:flex;justify-content:space-between;padding:calc(12px + env(safe-area-inset-top,0px)) 16px 0;font-weight:700;font-size:1.1rem;pointer-events:none;text-shadow:0 2px 6px #000}
+#ctl{position:fixed;left:0;right:0;bottom:0;display:flex;gap:10px;justify-content:center;padding:0 16px calc(16px + env(safe-area-inset-bottom,0px))}
+#ctl button{flex:1;max-width:150px;height:96px;font-size:2.2rem;color:#fff;background:#ffffff22;border:1px solid #ffffff44;border-radius:18px}
+#ctl button:active{background:#ffffff55}
+#ov{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#0b0a1acc;text-align:center;padding:24px}
+#ov h1{margin:0;font-size:2rem;color:#22e5ff;text-shadow:0 0 18px #22e5ff88}
+#ov p{margin:0;color:#c9c4ee;max-width:280px}
+#go{font:inherit;font-weight:700;font-size:1.2rem;color:#0b0a1a;background:#22e5ff;border:0;border-radius:14px;padding:14px 34px}
+[hidden]{display:none!important}
+</style></head><body>
+<div id="hud"><span id="sc">0</span><span id="co">🪙 0</span><span id="bs">Best 0</span></div>
+<div id="ctl"><button id="bl">◀</button><button id="bj">⤒</button><button id="br">▶</button></div>
+<div id="ov"><h1>Neon Runner 3D</h1><p id="ms">Dodge the red blocks, grab coins. Swipe left or right to change lane, swipe up or tap to jump.</p><button id="go">Start</button></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const $=s=>document.querySelector(s),rnd=n=>Math.random()*n|0;
+const R=new THREE.WebGLRenderer({antialias:true});R.setPixelRatio(Math.min(devicePixelRatio,1.5));R.setSize(innerWidth,innerHeight);document.body.prepend(R.domElement);
+const sc=new THREE.Scene();sc.background=new THREE.Color(0x0b0a1a);sc.fog=new THREE.Fog(0x0b0a1a,25,80);
+const cam=new THREE.PerspectiveCamera(65,innerWidth/innerHeight,.1,120);cam.position.set(0,4,7);cam.lookAt(0,1,-8);
+sc.add(new THREE.AmbientLight(0x9999ff,.7));const dl=new THREE.DirectionalLight(0xffffff,.8);dl.position.set(3,8,5);sc.add(dl);
+addEventListener('resize',()=>{R.setSize(innerWidth,innerHeight);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix()});
+
+const G=new THREE.Mesh(new THREE.PlaneGeometry(7.4,300),new THREE.MeshStandardMaterial({color:0x15123a}));G.rotation.x=-Math.PI/2;G.position.z=-100;sc.add(G);
+const dashes=[],dm=new THREE.MeshBasicMaterial({color:0x6a5cff});
+for(let i=0;i<14;i++)for(const x of[-1.1,1.1]){const d=new THREE.Mesh(new THREE.BoxGeometry(.08,.02,2.5),dm);d.position.set(x,.01,-i*6);sc.add(d);dashes.push(d)}
+const pm=new THREE.MeshStandardMaterial({color:0xff3d9a,emissive:0x8a1050}),pyl=[];
+for(let i=0;i<10;i++)for(const x of[-4.6,4.6]){const p=new THREE.Mesh(new THREE.BoxGeometry(.5,3+i%3,.5),pm);p.position.set(x,1.5,-i*9);sc.add(p);pyl.push(p)}
+
+const pl=new THREE.Mesh(new THREE.BoxGeometry(1,1,1),new THREE.MeshStandardMaterial({color:0x22e5ff,emissive:0x0a5a6a}));sc.add(pl);
+const tm=new THREE.MeshStandardMaterial({color:0xff3d3d,emissive:0x6a0a0a}),lm=new THREE.MeshStandardMaterial({color:0xff9a1f,emissive:0x6a3a00}),
+cg=new THREE.TorusGeometry(.35,.12,8,16),cmat=new THREE.MeshStandardMaterial({color:0xffd23d,emissive:0x8a6a00});
+
+let lane,px,py,vy,speed,dist,coins,run=0,obs=[],cns=[],sp,best=0;
+try{best=+localStorage.getItem('nr3d')||0}catch(e){}
+$('#bs').textContent='Best '+best;
+
+function box(x,w,h,m,z){const b=new THREE.Mesh(new THREE.BoxGeometry(w,h,1.2),m);b.position.set(x,h/2,z);sc.add(b);obs.push({m:b,x,w,h})}
+function spawn(){const z=-90,r=Math.random(),L=[-1,0,1];
+if(r<.6)box(L[rnd(3)]*2.2,1.8,2.2,tm,z);
+else if(r<.85){const f=rnd(3);L.forEach((l,i)=>i!=f&&box(l*2.2,1.8,2.2,tm,z))}
+else L.forEach(l=>box(l*2.2,1.9,.8,lm,z));
+if(Math.random()<.7){const cx=L[rnd(3)]*2.2;for(let i=0;i<4;i++){const c=new THREE.Mesh(cg,cmat);c.position.set(cx,1,z+3+i*2);sc.add(c);cns.push(c)}}}
+
+function reset(){obs.forEach(o=>sc.remove(o.m));cns.forEach(c=>sc.remove(c));obs=[];cns=[];lane=0;px=0;py=.5;vy=0;speed=18;dist=0;coins=0;sp=10}
+function mv(d){if(run)lane=Math.max(-1,Math.min(1,lane+d))}
+function jump(){if(run&&py<=.51)vy=12.5}
+function over(){run=0;const s=score();if(s>best){best=s;try{localStorage.setItem('nr3d',best)}catch(e){}}
+$('#bs').textContent='Best '+best;$('#ms').textContent='Crashed! Score '+s+' · Best '+best;$('#go').textContent='Play again';$('#ov').hidden=0}
+const score=()=>(dist/8|0)+coins*10;
+
+function step(dt){
+speed+=dt*.35;dist+=speed*dt;
+px+=(lane*2.2-px)*Math.min(1,dt*28);vy-=38*dt;py+=vy*dt;if(py<=.5){py=.5;vy=0}
+pl.position.set(px,py,0);pl.rotation.z=(px-lane*2.2)*.3;cam.position.x=px*.4;
+dashes.forEach(d=>{d.position.z+=speed*dt;if(d.position.z>6)d.position.z-=84});
+pyl.forEach(p=>{p.position.z+=speed*dt;if(p.position.z>6)p.position.z-=90});
+sp-=speed*dt;if(sp<=0){spawn();sp=12+Math.random()*8}
+for(const o of obs){o.m.position.z+=speed*dt;const z=o.m.position.z;
+if(Math.abs(z)<1.05&&Math.abs(o.x-px)<o.w/2+.4&&py-.5<o.h-.05){over();return}}
+obs=obs.filter(o=>o.m.position.z<6||(sc.remove(o.m),0));
+cns=cns.filter(c=>{c.position.z+=speed*dt;c.rotation.y+=dt*4;
+if(Math.abs(c.position.z)<1&&Math.abs(c.position.x-px)<1&&Math.abs(1-py)<1.3){coins++;sc.remove(c);return 0}
+if(c.position.z>6){sc.remove(c);return 0}return 1});
+$('#sc').textContent=score();$('#co').textContent='🪙 '+coins}
+
+let last=performance.now();
+function loop(t){const dt=Math.min(.05,(t-last)/1e3);last=t;if(run)step(dt);else pl.rotation.y+=dt*2;R.render(sc,cam);requestAnimationFrame(loop)}
+
+$('#go').onclick=()=>{reset();pl.rotation.set(0,0,0);$('#ov').hidden=1;run=1};
+$('#bl').onpointerdown=()=>mv(-1);$('#br').onpointerdown=()=>mv(1);$('#bj').onpointerdown=jump;
+let sx=0,sy=0,act=0;const cv=R.domElement;
+cv.onpointerdown=e=>{sx=e.clientX;sy=e.clientY;act=1};
+cv.onpointermove=e=>{if(!act)return;const dx=e.clientX-sx,dy=e.clientY-sy;if(Math.abs(dx)>Math.abs(dy)&&Math.abs(dx)>20){mv(dx>0?1:-1);act=0}else if(dy<-20){jump();act=0}};
+cv.onpointerup=e=>{if(act&&Math.hypot(e.clientX-sx,e.clientY-sy)<10)jump();act=0};
+addEventListener('keydown',e=>{const k=e.key;if(k=='ArrowLeft'||k=='a')mv(-1);else if(k=='ArrowRight'||k=='d')mv(1);else if(k=='ArrowUp'||k=='w'||k==' ')jump()});
+reset();requestAnimationFrame(loop);
+</script></body></html>
